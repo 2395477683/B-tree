@@ -55,10 +55,10 @@ public:
     void insert(int k);
 
     //借位
-    void btree_jiewei(int k);
+    void btree_jiewei(BTreeNode *node,BTreeNode *f,int index,int isleaf);
 
     //合并
-    void btree_hebin(int k);
+    void btree_hebin(BTreeNode *node,BTreeNode *f,int index);
 
 };
 
@@ -133,7 +133,7 @@ BTreeNode *BTreeNode::Lastsearch(int k,BTreeNode *a)
         return NULL;
 
     // 递归搜索对应的子节点
-    return C[i]->Lastsearch(k,C[i]);
+    return C[i]->Lastsearch(k,this);
 }
 
 // B 树插入键的主函数
@@ -235,40 +235,60 @@ void BTreeNode::splitChild(int i, BTreeNode *y)
     n++; // 更新当前节点键数
 }
 
-//删除下溢后借位
-void BTree::btree_jiewei(int k){
-    int idx=0;
-    BTreeNode *node=search(k);
-    while(idx< node->n&& k > node ->keys[idx]){
-        idx++;
-    }                               //找k节点
-                                
-    BTreeNode *f=Lastsearch(k);
-    int index=0;
-    while(index< f->n&& k > f ->keys[index]){
-        index++;
-    }                               //找k父节点
+//下溢后借位
+void BTree::btree_jiewei(BTreeNode *node,BTreeNode *f,int index,int isleaf){
 
     //如果左兄弟够找左兄弟借
-    if(f->C[index-1]->n-1>=t/2){
+    if(index-1>=0&&f->C[index-1]->n-1>=t/2){
         int fk=f->keys[index-1];    //获取父节点的键值
-        for(int j=node->n-1;j>=idx;--j){
+        BTreeNode *bs;
+        if(!isleaf){
+        //如果左兄弟键值的右孩子存在，则记录左兄弟键值的右孩子
+        if(f->C[index-1]->C[f->C[index-1]->n]->n>0){
+            bs = f->C[index-1]->C[f->C[index-1]->n];
+            //清空子树
+            for(int j=0;j<f->C[index-1]->C[f->C[index-1]->n]->n;++j){
+                f->C[index+1]->C[f->C[index-1]->n]->keys[j]==0;
+            }
+            f->C[index+1]->C[f->C[index-1]->n]=nullptr;
+            }
+        }
+
+        for(int j=node->n-1;j>=0;--j){
             node->keys[j+1]=node->keys[j];
         }
-        node->n++;                  //将叶子节点从删除键值往后推
-        node->keys[idx]=fk;         //赋值给叶子节点
+        node->n++;                //将叶子节点从删除键值往后推
+        node->keys[0]=fk;         //将父节点的键值给叶子节点
 
-    //将左兄弟的键值放到父亲节点
+        //将左兄弟的键值放到父亲节点
         int sk=f->C[index-1]->keys[f->C[index-1]->n-1];
         f->C[index-1]->keys[f->C[index-1]->n-1]=0;
+        f->C[index-1]->n--;
         f->keys[index-1]=sk;
+
+        if(!isleaf){
+            //如果父节点从兄弟借的键值有孩子也要一起带过来
+            f->C[index]->C[0]=bs;
+        }
     }
     //如果右兄弟够找右兄弟借
     else if(f->C[index+1]->n-1>=t/2){
         int fk=f->keys[index+1];   //获取父节点的键值
-        node->keys[node->n]=fk;
-        node->n++;                   //父节点的键值添加到尾
-        node->keys[idx]=fk;         //赋值给叶子节点
+        BTreeNode *bs;
+        if(!isleaf){    
+        //如果右兄弟键值的左孩子存在，则记录右兄弟键值的左孩子
+        if(f->C[index+1]->C[0]->n>0){
+            bs = f->C[index+1]->C[0];
+            //清空子树
+            for(int j=0;j<f->C[index+1]->C[0]->n;++j){
+                f->C[index+1]->C[0]->keys[j]==0;
+            }
+            f->C[index+1]->C[0]=nullptr;
+            }
+        }
+
+        node->keys[node->n]=fk;      //父节点的键值添加到尾     
+        node->n++;                    
 
         //将右兄弟的键值放到父亲节点
         int sk=f->C[index+1]->keys[0];
@@ -276,77 +296,109 @@ void BTree::btree_jiewei(int k){
             f->C[index+1]->keys[j]=f->C[index+1]->keys[j+1];    
         }
         f->keys[index+1]=sk;
+        f->C[index+1]->n--;
+
+        if(!isleaf){
+        //如果父节点从兄弟借的键值有孩子也要一起带过来
+        f->C[index]->C[f->C[index]->n]=bs;
+        }
     }
     //如果都不够就合并
     else{
-        btree_hebin(k);
-        //检查合并后父节点是否下溢
-        if(f->n<t/2){
-
-        }
+        btree_hebin(node,f,index);
     }
 }
 
 //无法借位就合并
-void BTree::btree_hebin(int k){
-    int idx=0;
-    BTreeNode *node=search(k);
-    while(idx< node->n&& k > node ->keys[idx]){
-        idx++;
-    }                               //找k节点
-                                
-    BTreeNode *f=Lastsearch(k);
-    int index=0;
-    while(index< f->n&& k > f ->keys[index]){
-        index++;
-    }                               //找k父节点
+void BTree::btree_hebin(BTreeNode *node,BTreeNode *f, int index){
 
     //如果左兄弟存在
     if(f->t>1&&index>0){
         int fk=f->keys[index-1];  //获取要合并的父键值
+        BTreeNode *gf=Lastsearch(fk);   //祖父节点
 
-        f->C[index-1]->keys[f->C[index-1]->n]=fk;
-        f->C[index-1]->n++;                         //合并父键值
-        for(int j=0;j<node->n;++j){
-        f->C[index-1]->keys[f->C[index-1]->n]=node->keys[j];
-        f->C[index-1]->n++;                         //合并叶子键值
-        node->keys[j]=0;                               
+        for(int j=0;j<=f->C[index]->n-1;++j){
+            f->C[index]->keys[j+1]=f->C[index]->keys[j];
         }
+        f->C[index]->keys[0]=fk;
+        f->C[index]->n++;                         //合并父键值
+
+
+        for(int z=node->n-1;z>=0;--z)  {
+            for(int j=0;j<=f->C[index]->n-1;++j){
+            f->C[index]->keys[j+1]=f->C[index]->keys[j];
+            }
+            f->C[index]->keys[0]=f->C[index-1]->keys[z];
+            f->C[index]->n++;  
+            f->C[index-1]->n--;      
+        }                                           //合并叶子键值      
+
+
         //收尾
-        node=nullptr;
+        f->C[index-1]=nullptr;
         for(int j=index;j<f->n;++j){
             f->keys[j]=f->keys[j+1];
         }
-            f->keys[index]=0;
+        // 调整父节点的子节点指针数组
+        for (int j = index; j <= f->n; j++) { // 注意子节点数目为n+1
+            f->C[j] = f->C[j+1];
+        }        
+        f->keys[f->n]=0;
         f->n--;
-        f->t--;
+
+         //检查合并后父节点是否下溢
+        if(f->n-1<t/2){
+            //如果下溢找父节点兄弟借
+
+            //找k的祖父节点的键值的位置
+            int gindex=0;
+            while(index< gf->n&& fk > gf ->keys[gindex]){
+                gindex++;
+            }
+            btree_jiewei(f,gf,gindex,0);
+        }    
+
     }
     //如果右兄弟存在
     else if(f->t>1&&index<f->n-1){
         int fk=f->keys[index+1];  //获取要合并的父键值
+        BTreeNode *gf=Lastsearch(fk);   //祖父节点
 
-        for(int j=f->C[index+1]->n-1;j>=0;--j){
-            f->C[index+1]->keys[j+1]=f->C[index+1]->keys[j];
+         //合并父键值
+        f->C[index]->keys[f->C[index]->n]=fk;
+        f->C[index]->n++;                        
+
+        //合并叶子键值
+        for(int j=0;j<f->C[index+1]->n;++j){
+            f->C[index]->keys[f->C[index]->n]=f->C[index+1]->keys[j];
+            f->C[index+1]->keys[j]=0;
+            f->C[index]->n++;                            
         }
-        f->C[index+1]->keys[0]=fk;
-        f->C[index+1]->n++;                         //合并父键值
 
-        for(int z=node->n-1;z>=0;--z)  {
-            for(int j=f->C[index+1]->n-1;j>=0;--j){
-                f->C[index+1]->keys[j+1]=f->C[index+1]->keys[j];
-            }
-            f->C[index+1]->keys[0]=node->keys[z];  
-            node->keys[z]=0;  
-            f->C[index+1]->n++;      
-        }                                           //合并叶子键值                          
+
         //收尾
-        node=nullptr;
-        for(int j=index+1;j<f->n;++j){
+        f->C[index+1]=nullptr;
+        for(int j=index;j<f->n;++j){
             f->keys[j]=f->keys[j+1];
         }
-        f->keys[index+1]=0;
+        // 调整父节点的子节点指针数组
+        for (int j = index; j <= f->n; j++) { // 注意子节点数目为n+1
+        f->C[j] = f->C[j+1];
+        }
+        f->keys[f->n-1]=0;
         f->n--;
-        f->t--;
+         //检查合并后父节点是否下溢
+        if(f->n-1<t/2){
+            //如果下溢找父节点兄弟借
+
+            //找k的祖父节点
+            int gindex=0;
+            while(index< gf->n&& fk > gf ->keys[gindex]){
+                gindex++;
+            }
+            btree_jiewei(f,gf,gindex,0);
+        }    
+
     }
 }
 
@@ -354,12 +406,20 @@ void BTree::btree_hebin(int k){
 //键值的删除
 void BTree::btree_delete_key(int k){
 
+    //找k节点
     int idx=0;
     BTreeNode *node=search(k);
-    //找节点
     while(idx< node->n&& k > node ->keys[idx]){
         idx++;
     }
+
+   //找k的父节点
+    int index=0;
+    BTreeNode *f=Lastsearch(k);
+    while(index< f->n&& k > f ->keys[index]){
+        index++;
+    }                                                
+
     //如果要删除根节点中的键值
     if(node==root){
         //根节点只有一个值
@@ -374,6 +434,7 @@ void BTree::btree_delete_key(int k){
                         root->keys[0]=node->keys[node->n-1];//更新根节点和前驱
                         node->keys[node->n-1]=0;
                         node->n--;
+                        break;
                     }
                 }
             }
@@ -402,134 +463,99 @@ void BTree::btree_delete_key(int k){
                 node->keys[i]=node->keys[i+1];
             }
             node->n--;
-            //删除之后出现下溢
+            //删除之后出现下溢进行借位
             if(node->n<t/2){
-                BTreeNode *f=Lastsearch(k);
-                //找节点
-                int index=0;
-                while(index< f->n&& k > f ->keys[index]){
-                    index++;
-                }
-                //如果左兄弟够找左兄弟借
-                if(f->C[index-1]->n-1>=t/2){
-                    int fk=f->keys[index-1];   //获取父节点的键值
-                    for(int j=node->n-1;j>=idx;--j){
-                        node->keys[j+1]=node->keys[j];
-                    }
-                    node->n++;                  //将叶子节点从删除键值往后推
-                    node->keys[idx]=fk;         //赋值给叶子节点
-
-                    //将左兄弟的键值放到父亲节点
-                    int sk=f->C[index-1]->keys[f->C[index-1]->n-1];
-                    f->C[index-1]->keys[f->C[index-1]->n-1]=0;
-                    f->keys[index-1]=sk;
-                }
-                //如果右兄弟够找右兄弟借
-                else if(f->C[index+1]->n-1>=t/2){
-                    int fk=f->keys[index+1];   //获取父节点的键值
-                    node->keys[node->n]=fk;
-                    node->n++;                   //父节点的键值添加到尾
-                    node->keys[idx]=fk;         //赋值给叶子节点
-
-                    //将右兄弟的键值放到父亲节点
-                    int sk=f->C[index+1]->keys[0];
-                    for(int j=0;j<f->C[index+1]->n;++j){
-                        f->C[index+1]->keys[j]=f->C[index+1]->keys[j+1];    
-                    }
-                    f->keys[index+1]=sk;
-                }
-                //如果都不够就合并
-                else{
-                    //如果左兄弟存在
-                    if(f->t>1&&index>0){
-                        int fk=f->keys[index-1];  //获取要合并的父键值
-
-                        f->C[index-1]->keys[f->C[index-1]->n]=fk;
-                        f->C[index-1]->n++;                         //合并父键值
-                        for(int j=0;j<node->n;++j){
-                        f->C[index-1]->keys[f->C[index-1]->n]=node->keys[j];
-                        f->C[index-1]->n++;                         //合并叶子键值
-                        node->keys[j]=0;                               
-                        }
-                        //收尾
-                        node=nullptr;
-                        for(int j=index;j<f->n;++j){
-                            f->keys[j]=f->keys[j+1];
-                        }
-                         f->keys[index]=0;
-                        f->n--;
-                        f->t--;
-                    }
-                    //如果右兄弟存在
-                    else if(f->t>1&&index<f->n-1){
-                        int fk=f->keys[index+1];  //获取要合并的父键值
-
-                        for(int j=f->C[index+1]->n-1;j>=0;--j){
-                            f->C[index+1]->keys[j+1]=f->C[index+1]->keys[j];
-                        }
-                        f->C[index+1]->keys[0]=fk;
-                        f->C[index+1]->n++;                         //合并父键值
-
-                        for(int z=node->n-1;z>=0;--z)  {
-                            for(int j=f->C[index+1]->n-1;j>=0;--j){
-                                f->C[index+1]->keys[j+1]=f->C[index+1]->keys[j];
-                            }
-                            f->C[index+1]->keys[0]=node->keys[z];  
-                            node->keys[z]=0;  
-                            f->C[index+1]->n++;      
-                        }                                           //合并叶子键值                          
-                        //收尾
-                        node=nullptr;
-                        for(int j=index+1;j<f->n;++j){
-                            f->keys[j]=f->keys[j+1];
-                        }
-                        f->keys[index+1]=0;
-                        f->n--;
-                        f->t--;
-                    }
-                    //检查合并后是否下溢
-                    if(f->n<t/2){
-
-                    }
-                }
+            btree_jiewei(node,f,index,1);
             }
         }
         //不是叶子节点
         else{
-            for(int i=idx;i<node->n;++i){
-                node->keys[i]=node->keys[i+1];
+            //检查删除后是否下溢
+            if(node->n<t/2){
+                //下溢找前后驱,先检查前后驱是否存在
+                if(node->C[idx+1]->n>0){
+                    int latekeys=node->C[idx+1]->keys[0]; //后驱键值
+                    node->keys[idx]=latekeys;             //消除下溢同时删除k键值
+                    //收尾处理孩子,检查后驱孩子是否出现新的下溢出
+                    for(int j=0;j<node->C[idx+1]->n;++j){
+                        node->C[idx+1]->keys[j]=node->C[idx+1]->keys[j+1];
+                    }
+                    node->C[idx+1]->keys[node->C[idx+1]->n-1]=0;
+                    node->C[idx+1]->n--;
+                    if(node->C[idx+1]->n<t/2){
+                        //孩子出现新的下溢,先借，借不到就合并
+                        btree_jiewei(node->C[idx+1],node,idx+1,0);
+                    }
+                }
+                //检查前驱
+                else if(node->C[idx]->n>0){
+                    int headkeys=node->C[idx]->keys[node->C[idx]->n-1]; //前驱键值
+                    node->keys[idx]=headkeys;             //消除下溢同时删除k键值
+                    //收尾处理孩子,检查后驱孩子是否出现新的下溢出
+                    node->C[idx]->keys[node->C[idx]->n-1]=0;
+                    node->C[idx]->n--;
+                    if(node->C[idx]->n<t/2){
+                        //孩子出现新的下溢,先借，借不到就合并
+                        btree_jiewei(node->C[idx],node,idx+1,0);
+                    }
+                }
+                //没有前后驱孩子直接删
+                else{
+                    for(int i=idx;i<node->n;++i){
+                        node->keys[i]=node->keys[i+1];
+                    }
+                    node->keys[node->n-1]=0;
+                    node->n--;
+                }
             }
-            node->keys[node->n-1]=0;
-            node->n--;
-            if()
         }
     }
 }
 
-
 // 主函数用于测试上述功能
 int main()
 {
-    BTree t(3); // 创建最小度数为3的B树
+    BTree t(5); // 创建最小度数为3的B树
     t.insert(10);
     t.insert(20);
-    t.insert(5);
-    t.insert(6);
-    t.insert(12);
-    t.insert(30);
-    t.insert(7);
-    t.insert(17);
+    t.insert(30);    t.insert(92);
+    t.insert(93);
+    t.insert(40);
+    t.insert(41);
+    t.insert(42);
+    t.insert(43);
+    t.insert(44);
+    t.insert(45);
+    t.insert(46);
+    t.insert(47);
+    t.insert(50);
+    t.insert(51);
+    t.insert(53);
+    t.insert(57);
+    t.insert(60);
+    t.insert(65);
+    t.insert(68);
+    t.insert(72);
+    t.insert(74);
+    t.insert(76);
+    t.insert(83);
+    t.insert(86);
+    t.insert(90);
  
     cout << "Traversal of the constucted tree is "; // 输出构造后的树的中序遍历
+    while(1){
     t.traverse(); // 执行遍历操作
+    cout<<endl;
+    int k;
+    cin>>k;
+    t.btree_delete_key(k);
+    }
+    // int k = 6;
+    // // 查找键值6并输出结果
+    // (t.search(k) != NULL)? cout << "\nPresent" : cout << "\nNot Present";
  
-    int k = 6;
-    // 查找键值6并输出结果
-    (t.search(k) != NULL)? cout << "\nPresent" : cout << "\nNot Present";
- 
-    k = 15;
-    // 查找键值15并输出结果
-    (t.search(k) != NULL)? cout << "\nPresent" : cout << "\nNot Present";
- 
+    // k = 15;
+    // // 查找键值15并输出结果
+    // (t.search(k) != NULL)? cout << "\nPresent" : cout << "\nNot Present";
     return 0;
 }
