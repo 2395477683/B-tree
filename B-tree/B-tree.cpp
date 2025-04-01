@@ -515,10 +515,11 @@ void BTree::btree_delete_key(int k){
 // 主函数用于测试上述功能
 int main()
 {
-    BTree t(5); // 创建最小度数为3的B树
+    BTree t(5); // 创建最小度数为5的B树
     t.insert(10);
     t.insert(20);
-    t.insert(30);    t.insert(92);
+    t.insert(30);
+    t.insert(92);
     t.insert(93);
     t.insert(40);
     t.insert(41);
@@ -541,7 +542,6 @@ int main()
     t.insert(83);
     t.insert(86);
     t.insert(90);
- 
     cout << "Traversal of the constucted tree is "; // 输出构造后的树的中序遍历
     while(1){
     t.traverse(); // 执行遍历操作
